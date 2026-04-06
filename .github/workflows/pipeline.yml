@@ -38,6 +38,8 @@ jobs:
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
           python -m nltk.downloader punkt
           python -m nltk.downloader punkt_tab
+          python -m playwright install chromium
+          python -m playwright install-deps
 
       - name: Run pipeline
         env:

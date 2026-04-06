@@ -10,3 +10,4 @@ feedparser
 duckduckgo-search
 yt-dlp
 curl_cffi
+playwright

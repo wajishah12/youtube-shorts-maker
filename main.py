@@ -64,7 +64,7 @@ def get_transcript_ytdlp(video_id):
             "--output", out_tmpl,
             f"https://www.youtube.com/watch?v={video_id}"
         ]
-        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(cmd, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         
         files = glob.glob(os.path.join(OUTPUT_DIR, f"{video_id}*.vtt"))
         if not files:
@@ -92,6 +92,59 @@ def get_transcript_ytdlp(video_id):
         print(f"yt-dlp fallback failed: {e}")
         return None
 
+def get_transcript_playwright(video_id):
+    try:
+        from playwright.sync_api import sync_playwright
+        import xml.etree.ElementTree as ET
+        
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            context = browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            )
+            page = context.new_page()
+            page.goto(f"https://www.youtube.com/watch?v={video_id}")
+            
+            # Optionally dismiss consent popup if it blocks
+            try:
+                page.click('button[aria-label="Accept all"]', timeout=3000)
+            except:
+                pass
+                
+            page.wait_for_selector('video', timeout=15000)
+            
+            player_response = page.evaluate("window.ytInitialPlayerResponse")
+            if not player_response:
+                browser.close()
+                return None
+                
+            captions = player_response.get('captions', {})
+            track_list = captions.get('playerCaptionsTracklistRenderer', {}).get('captionTracks', [])
+            
+            if not track_list:
+                browser.close()
+                return None
+                
+            en_track = next((t for t in track_list if t.get('languageCode', '').startswith('en')), track_list[0])
+            url = en_track['baseUrl']
+            
+            # Fetch the actual transcript XML using the browser context to maintain IP trust
+            xml_text = page.evaluate("(url) => fetch(url).then(r => r.text())", url)
+            browser.close()
+            
+            root = ET.fromstring(xml_text)
+            results = []
+            for child in root:
+                if child.text:
+                    import html
+                    clean_text = html.unescape(child.text.replace('\n', ' ')).strip()
+                    if clean_text:
+                        results.append({'text': clean_text})
+            return results
+    except Exception as e:
+        print(f"Playwright fallback failed: {e}")
+        return None
+
 def get_transcript(video_id):
     try:
         # Also tries getting auto-generated English captions if manual is missing
@@ -102,8 +155,13 @@ def get_transcript(video_id):
             return api.fetch(video_id, languages=['en', 'en-US', 'en-GB'])
     except Exception as e:
         print(f"Primary transcript fetch failed: {e}")
-        print("Attempting to use yt-dlp fallback to bypass IP block...")
-        return get_transcript_ytdlp(video_id)
+        
+        print("Attempting to use yt-dlp fallback...")
+        res = get_transcript_ytdlp(video_id)
+        if res: return res
+        
+        print("Attempting to use Playwright (Chromium) fallback to bypass IP block...")
+        return get_transcript_playwright(video_id)
 
 def chunk_transcript(transcript, limit=400):
     chunks = []
