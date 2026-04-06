@@ -60,6 +60,7 @@ def get_transcript_ytdlp(video_id):
             "--skip-download",
             "--sub-langs", "en.*",
             "--sub-format", "vtt",
+            "--impersonate", "chrome",
             "--output", out_tmpl,
             f"https://www.youtube.com/watch?v={video_id}"
         ]
