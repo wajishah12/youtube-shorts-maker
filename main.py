@@ -52,7 +52,11 @@ def extract_video_id(url):
 def get_transcript(video_id):
     try:
         # Also tries getting auto-generated English captions if manual is missing
-        return YouTubeTranscriptApi.get_transcript(video_id, languages=['en', 'en-US', 'en-GB'])
+        if hasattr(YouTubeTranscriptApi, 'get_transcript'):
+            return YouTubeTranscriptApi.get_transcript(video_id, languages=['en', 'en-US', 'en-GB'])
+        else:
+            api = YouTubeTranscriptApi()
+            return api.fetch(video_id, languages=['en', 'en-US', 'en-GB'])
     except Exception as e:
         print(f"Error fetching transcript: {e}")
         return None
@@ -62,7 +66,7 @@ def chunk_transcript(transcript, limit=400):
     current_chunk = []
     current_length = 0
     for entry in transcript:
-        text = entry['text'].replace('\n', ' ')
+        text = (entry.text if hasattr(entry, 'text') else entry['text']).replace('\n', ' ')
         if current_length + len(text) > limit:
             chunks.append(" ".join(current_chunk))
             current_chunk = [text]
@@ -145,7 +149,7 @@ def main():
         print("Could not get transcript. Video might not have closed captions.")
         return
         
-    full_text = " ".join([t['text'] for t in transcript]).replace('\n', ' ')
+    full_text = " ".join([t.text if hasattr(t, 'text') else t['text'] for t in transcript]).replace('\n', ' ')
     
     print("Summarizing...")
     summary_en = summarize_text(full_text, sentences_count=4)
