@@ -8,3 +8,4 @@ sumy
 nltk
 feedparser
 duckduckgo-search
+yt-dlp

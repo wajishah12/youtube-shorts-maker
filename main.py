@@ -13,6 +13,8 @@ from sumy.nlp.tokenizers import Tokenizer
 from sumy.summarizers.lsa import LsaSummarizer
 from PIL import Image
 import nltk
+import subprocess
+import glob
 
 OUTPUT_DIR = "output"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -49,6 +51,46 @@ def extract_video_id(url):
     match = re.search(r"(?:v=|\/)([0-9A-Za-z_-]{11}).*", url)
     return match.group(1) if match else None
 
+def get_transcript_ytdlp(video_id):
+    try:
+        out_tmpl = os.path.join(OUTPUT_DIR, f"{video_id}.%(ext)s")
+        cmd = [
+            "python", "-m", "yt_dlp",
+            "--write-auto-sub",
+            "--skip-download",
+            "--sub-langs", "en.*",
+            "--sub-format", "vtt",
+            "--output", out_tmpl,
+            f"https://www.youtube.com/watch?v={video_id}"
+        ]
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        
+        files = glob.glob(os.path.join(OUTPUT_DIR, f"{video_id}*.vtt"))
+        if not files:
+            return None
+            
+        with open(files[0], "r", encoding="utf-8") as f:
+            lines = f.readlines()
+            
+        text_blocks = []
+        for line in lines:
+            line = line.strip()
+            if not line or "-->" in line or re.match(r'^(WEBVTT|Kind:|Language:|Style|Region)', line) or re.match(r'^[0-9]+$', line):
+                continue
+            clean_text = re.sub(r'<[^>]+>', '', line).strip()
+            if clean_text:
+                text_blocks.append(clean_text)
+                
+        final_text = []
+        for tb in text_blocks:
+            if not final_text or final_text[-1] != tb:
+                final_text.append(tb)
+                
+        return [{'text': tb} for tb in final_text]
+    except Exception as e:
+        print(f"yt-dlp fallback failed: {e}")
+        return None
+
 def get_transcript(video_id):
     try:
         # Also tries getting auto-generated English captions if manual is missing
@@ -58,8 +100,9 @@ def get_transcript(video_id):
             api = YouTubeTranscriptApi()
             return api.fetch(video_id, languages=['en', 'en-US', 'en-GB'])
     except Exception as e:
-        print(f"Error fetching transcript: {e}")
-        return None
+        print(f"Primary transcript fetch failed: {e}")
+        print("Attempting to use yt-dlp fallback to bypass IP block...")
+        return get_transcript_ytdlp(video_id)
 
 def chunk_transcript(transcript, limit=400):
     chunks = []
