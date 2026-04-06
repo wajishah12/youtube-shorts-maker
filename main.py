@@ -11,10 +11,13 @@ from duckduckgo_search import DDGS
 from sumy.parsers.plaintext import PlaintextParser
 from sumy.nlp.tokenizers import Tokenizer
 from sumy.summarizers.lsa import LsaSummarizer
+from sumy.summarizers.lsa import LsaSummarizer
 from PIL import Image
 import nltk
 import subprocess
 import glob
+import time
+import json
 
 OUTPUT_DIR = "output"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -188,15 +191,16 @@ def summarize_text(text, sentences_count=5):
 
 def extract_keyword(text):
     words = re.findall(r'\b\w+\b', text.lower())
-    stop_words = set(["the", "a", "an", "is", "and", "or", "to", "in", "it", "of", "for", "on", "with", "as", "by", "that", "this", "they", "we", "are", "you", "so", "be", "at", "not", "but", "from", "have", "has", "do", "does", "was", "were"])
-    meaningful = [w for w in words if w not in stop_words and len(w) > 3]
+    stop_words = set(["the", "a", "an", "is", "and", "or", "to", "in", "it", "of", "for", "on", "with", "as", "by", "that", "this", "they", "we", "are", "you", "so", "be", "at", "not", "but", "from", "have", "has", "do", "does", "was", "were", "okay", "yeah", "yes", "well", "just", "like", "what", "how", "when", "where", "why", "who", "which", "will", "would", "can", "could", "should", "shall", "might", "must", "if", "then", "else", "because", "about", "into", "through", "during"])
+    meaningful = [w for w in words if w not in stop_words and len(w) > 4]
     if meaningful:
         counts = {w: meaningful.count(w) for w in set(meaningful)}
         return max(counts, key=counts.get)
-    return "technology" # fallback keyword
+    return "technology"
     
 def fetch_image_and_resize(keyword, index, target_size=(1280, 720)):
     try:
+        time.sleep(2) # Avoid rapid DDOS on DuckDuckGo
         with DDGS() as ddgs:
             results = [r for r in ddgs.images(keyword, max_results=5, safesearch="on")]
             if results:
@@ -219,7 +223,41 @@ def fetch_image_and_resize(keyword, index, target_size=(1280, 720)):
                     
                 return jpg_filepath
     except Exception as e:
-        print(f"Error fetching image for keyword {keyword}: {e}")
+        print(f"Error fetching image from DDG for keyword '{keyword}': {e}")
+        print("Falling back to Wikimedia Commons API...")
+        try:
+            url = "https://en.wikipedia.org/w/api.php"
+            import urllib.parse
+            params = {
+                "action": "query",
+                "format": "json",
+                "prop": "imageinfo",
+                "iiprop": "url",
+                "generator": "search",
+                "gsrsearch": f"filetype:bitmap {keyword}",
+                "gsrnamespace": "6",
+                "gsrlimit": "1"
+            }
+            req = urllib.request.Request(f"{url}?{urllib.parse.urlencode(params)}", headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, timeout=10) as response:
+                data = json.loads(response.read().decode('utf-8'))
+                pages = data.get("query", {}).get("pages", {})
+                if pages:
+                    page = list(pages.values())[0]
+                    image_url = page.get("imageinfo", [{}])[0].get("url")
+                    if image_url:
+                        filepath = os.path.join(OUTPUT_DIR, f"image_{index}_wiki.jpg")
+                        req_img = urllib.request.Request(image_url, headers={'User-Agent': 'Mozilla/5.0'})
+                        with urllib.request.urlopen(req_img, timeout=10) as img_resp, open(filepath, 'wb') as out_file:
+                            out_file.write(img_resp.read())
+                        with Image.open(filepath) as img:
+                            img = img.convert("RGB")
+                            img = img.resize(target_size, Image.Resampling.LANCZOS)
+                            jpg_filepath = os.path.join(OUTPUT_DIR, f"safe_image_{index}.jpg")
+                            img.save(jpg_filepath, format="JPEG")
+                        return jpg_filepath
+        except Exception as fallback_e:
+            print(f"Wikimedia fallback failed for '{keyword}': {fallback_e}")
     return None
 
 def main():
