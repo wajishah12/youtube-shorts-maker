@@ -1,0 +1,10 @@
+youtube-transcript-api
+deep-translator
+gTTS
+moviepy==1.0.3
+requests
+Pillow
+sumy
+nltk
+feedparser
+duckduckgo-search

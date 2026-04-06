@@ -1,0 +1,63 @@
+name: YouTube to Hindi Video Pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      video_url:
+        description: "YouTube Video URL to process manually (Overrides Channel check)"
+        required: false
+        type: string
+      channel_id:
+        description: "YouTube Channel ID to check for new videos automatically"
+        required: false
+        type: string
+  schedule:
+    - cron: '0 * * * *' # Every hour
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: Install system dependencies (ffmpeg & imagemagick)
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg imagemagick
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          python -m nltk.downloader punkt
+          python -m nltk.downloader punkt_tab
+
+      - name: Run pipeline
+        env:
+          MANUAL_VIDEO_URL: ${{ github.event.inputs.video_url }}
+          CHANNEL_ID: ${{ github.event.inputs.channel_id }}
+        run: python main.py
+
+      - name: Commit processed video ID
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add last_processed.txt || true
+          git diff --quiet && git diff --staged --quiet || git commit -m "Update last processed video"
+          git push
+        continue-on-error: true
+
+      - name: Upload artifacts (Video, Summaries, Transcripts)
+        uses: actions/upload-artifact@v4
+        with:
+          name: hindi-dubbed-video
+          path: |
+            output/*.mp4
+            output/*.txt
