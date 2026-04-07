@@ -307,15 +307,55 @@ def get_transcript_search_python(video_id):
         print(f"    Transcript library failed: {e}")
     return None
 
+def get_transcript_tv_client(video_id):
+    """Bypasses bot detection by using the TV client signature via a direct internal POST request."""
+    try:
+        import json
+        url = "https://www.youtube.com/youtubei/v1/player?key=AIzaSyAO_FJ28D-tU9-Wv9Z3Y1Y6Y9Y6Y9Y6Y9"
+        payload = {
+            "context": {
+                "client": {
+                    "clientName": "TVHTML5",
+                    "clientVersion": "7.20230405.08.01"
+                }
+            },
+            "videoId": video_id
+        }
+        req = urllib.request.Request(url, data=json.dumps(payload).encode(), headers={'Content-Type': 'application/json'})
+        with urllib.request.urlopen(req, timeout=10) as response:
+            data = json.loads(response.read().decode())
+            
+        captions = data.get("captions", {}).get("playerCaptionsTracklistRenderer", {}).get("captionTracks", [])
+        if not captions:
+            return None
+            
+        # Select English track
+        en_track = next((c for c in captions if c.get("languageCode", "").startswith("en")), captions[0])
+        sub_url = en_track["baseUrl"]
+        
+        # Fetch actual text
+        with urllib.request.urlopen(sub_url, timeout=10) as sub_res:
+            import xml.etree.ElementTree as ET
+            root = ET.fromstring(sub_res.read().decode('utf-8'))
+            return [{'text': child.text} for child in root if child.text]
+    except Exception as e:
+        print(f"    TV Client bypass failed: {e}")
+    return None
+
 def get_transcript(video_id):
     try:
-        # 0. New Primary: search-python library (Uses YouTube Music/Remix API signatures)
-        print("Using Internal Search API (Primary)...")
+        # 0. DEEP BYPASS: TV Client Method (Most resistant to cloud IP blocks)
+        print("Using TV Client Signature Bypass (Deep)...")
+        res = get_transcript_tv_client(video_id)
+        if res: return res
+
+        # 1. PRIMARY: search-python library (Uses YouTube Music API)
+        print("Using Internal Search API...")
         res = get_transcript_search_python(video_id)
         if res: return res
 
-        # 1. First Fallback: Piped API (Proxy)
-        print("Using Piped Proxy Fallback...")
+        # 2. PROXY: Piped API
+        print("Using Piped Proxy Rotation...")
         res = get_transcript_piped(video_id)
         if res: return res
         
