@@ -241,7 +241,9 @@ def get_transcript_piped(video_id):
         "https://pipedapi.leptons.xyz",
         "https://pipedapi.tokhmi.xyz",
         "https://api-piped.mha.fi",
-        "https://pipedapi.moomoo.me"
+        "https://pipedapi.moomoo.me",
+        "https://piped-api.garudalinux.org",
+        "https://pipedapi.colatube.org"
     ]
     
     for instance in instances:
@@ -353,7 +355,7 @@ def get_transcript_stealth_playwright(video_id):
             browser = p.chromium.launch(headless=True)
             context = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
             page = context.new_page()
-            stealth(page) # CORRECTED IMPORT AND CALL
+            stealth(page) # CORRECTED CALL
             
             page.goto(f"https://www.youtube.com/watch?v={video_id}")
             
