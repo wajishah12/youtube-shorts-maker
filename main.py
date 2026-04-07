@@ -279,14 +279,31 @@ def get_transcript_piped(video_id):
             continue
     return None
 
+def get_transcript_search_python(video_id):
+    """Fallback method using youtube-search-python which uses different internal API signatures."""
+    try:
+        from youtubesearchpython import Transcript
+        print(f"  Attempting Transcript library for {video_id}...")
+        transcript = Transcript.get(f"https://www.youtube.com/watch?v={video_id}")
+        if transcript and 'segments' in transcript:
+            return [{'text': s['text']} for s in transcript['segments']]
+    except Exception as e:
+        print(f"    Transcript library failed: {e}")
+    return None
+
 def get_transcript(video_id):
     try:
-        # 1. Primary Method: Piped API (Best for Cloud IPs)
-        print("Using Piped Proxy Fallback (Primary)...")
+        # 0. New Primary: search-python library (Uses YouTube Music/Remix API signatures)
+        print("Using Internal Search API (Primary)...")
+        res = get_transcript_search_python(video_id)
+        if res: return res
+
+        # 1. First Fallback: Piped API (Proxy)
+        print("Using Piped Proxy Fallback...")
         res = get_transcript_piped(video_id)
         if res: return res
         
-        # 2. Secondary Method: standard API
+        # 2. Second Fallback: standard API
         print("Attempting YouTube Transcript API...")
         if hasattr(YouTubeTranscriptApi, 'get_transcript'):
             return YouTubeTranscriptApi.get_transcript(video_id, languages=['en', 'en-US', 'en-GB'])

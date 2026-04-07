@@ -12,3 +12,4 @@ yt-dlp
 curl_cffi
 playwright
 openai-whisper
+youtube-search-python
