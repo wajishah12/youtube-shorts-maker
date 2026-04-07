@@ -232,22 +232,75 @@ def get_transcript_audio(video_id):
         print(f"Whisper fallback failed: {e}")
         return None
 
+def get_transcript_piped(video_id):
+    """Fetches transcript/captions from a Piped proxy instance to bypass YouTube IP blocks."""
+    # List of reliable Piped instances
+    instances = ["https://pipedapi.kavin.rocks", "https://api.piped.victr.me", "https://pipedapi.leptons.xyz"]
+    
+    for instance in instances:
+        try:
+            print(f"  Attempting Piped instance: {instance}")
+            url = f"{instance}/streams/{video_id}"
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, timeout=10) as response:
+                data = json.loads(response.read().decode('utf-8'))
+                
+            # Piped provides subtitles in the 'subtitles' key
+            subtitles = data.get('subtitles', [])
+            if not subtitles:
+                continue
+                
+            # Find English subtitles
+            en_sub = next((s for s in subtitles if s.get('code', '').startswith('en')), subtitles[0])
+            sub_url = en_sub['url']
+            
+            # Fetch the actual vtt/srt content
+            with urllib.request.urlopen(sub_url, timeout=10) as sub_response:
+                lines = sub_response.read().decode('utf-8').splitlines()
+                
+            text_blocks = []
+            for line in lines:
+                line = line.strip()
+                if not line or "-->" in line or re.match(r'^(WEBVTT|Kind:|Language:|Style|Region)', line) or re.match(r'^[0-9]+$', line):
+                    continue
+                clean_text = re.sub(r'<[^>]+>', '', line).strip()
+                if clean_text:
+                    text_blocks.append(clean_text)
+            
+            final_text = []
+            for tb in text_blocks:
+                if not final_text or final_text[-1] != tb:
+                    final_text.append(tb)
+            
+            if final_text:
+                return [{'text': tb} for tb in final_text]
+        except Exception as e:
+            print(f"    Failed instance {instance}: {e}")
+            continue
+    return None
+
 def get_transcript(video_id):
     try:
-        # Also tries getting auto-generated English captions if manual is missing
+        # 1. Primary Method: Piped API (Best for Cloud IPs)
+        print("Using Piped Proxy Fallback (Primary)...")
+        res = get_transcript_piped(video_id)
+        if res: return res
+        
+        # 2. Secondary Method: standard API
+        print("Attempting YouTube Transcript API...")
         if hasattr(YouTubeTranscriptApi, 'get_transcript'):
             return YouTubeTranscriptApi.get_transcript(video_id, languages=['en', 'en-US', 'en-GB'])
         else:
             api = YouTubeTranscriptApi()
             return api.fetch(video_id, languages=['en', 'en-US', 'en-GB'])
     except Exception as e:
-        print(f"Primary transcript fetch failed: {e}")
+        print(f"Transcript fetch failed: {e}")
         
-        print("Attempting to use yt-dlp fallback...")
+        print("Attempting to use yt-dlp fallback (Deep rotation)...")
         res = get_transcript_ytdlp(video_id)
         if res: return res
         
-        print("Attempting to use Playwright (Chromium) fallback to bypass IP block...")
+        print("Attempting to use Playwright (Chromium) fallback...")
         return get_transcript_playwright(video_id)
 
 def chunk_transcript(transcript, limit=400):
