@@ -235,14 +235,21 @@ def get_transcript_audio(video_id):
 def get_transcript_piped(video_id):
     """Fetches transcript/captions from a Piped proxy instance to bypass YouTube IP blocks."""
     # List of reliable Piped instances
-    instances = ["https://pipedapi.kavin.rocks", "https://api.piped.victr.me", "https://pipedapi.leptons.xyz"]
+    instances = [
+        "https://pipedapi.kavin.rocks", 
+        "https://api.piped.victr.me", 
+        "https://pipedapi.leptons.xyz",
+        "https://pipedapi.tokhmi.xyz",
+        "https://api-piped.mha.fi",
+        "https://pipedapi.moomoo.me"
+    ]
     
     for instance in instances:
         try:
             print(f"  Attempting Piped instance: {instance}")
             url = f"{instance}/streams/{video_id}"
-            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-            with urllib.request.urlopen(req, timeout=10) as response:
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'})
+            with urllib.request.urlopen(req, timeout=15) as response:
                 data = json.loads(response.read().decode('utf-8'))
                 
             # Piped provides subtitles in the 'subtitles' key
@@ -250,29 +257,38 @@ def get_transcript_piped(video_id):
             if not subtitles:
                 continue
                 
-            # Find English subtitles
-            en_sub = next((s for s in subtitles if s.get('code', '').startswith('en')), subtitles[0])
+            # Find English subtitles (prefer non-auto-generated if possible, but take any English)
+            en_sub = next((s for s in subtitles if s.get('code', '') == 'en'), None)
+            if not en_sub:
+                en_sub = next((s for s in subtitles if s.get('code', '').startswith('en')), subtitles[0])
+            
             sub_url = en_sub['url']
+            print(f"    Found English subtitles at: {sub_url}")
             
             # Fetch the actual vtt/srt content
-            with urllib.request.urlopen(sub_url, timeout=10) as sub_response:
+            sub_req = urllib.request.Request(sub_url, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(sub_req, timeout=15) as sub_response:
                 lines = sub_response.read().decode('utf-8').splitlines()
                 
             text_blocks = []
             for line in lines:
                 line = line.strip()
-                if not line or "-->" in line or re.match(r'^(WEBVTT|Kind:|Language:|Style|Region)', line) or re.match(r'^[0-9]+$', line):
+                # Skip VTT headers, timestamps, and empty lines
+                if not line or "-->" in line or re.match(r'^(WEBVTT|Kind:|Language:|Style|Region|NOTE|CONFID)', line) or re.match(r'^[0-9]+$', line):
                     continue
+                # Remove HTML-like tags
                 clean_text = re.sub(r'<[^>]+>', '', line).strip()
                 if clean_text:
                     text_blocks.append(clean_text)
             
+            # Remove duplicate consecutive lines
             final_text = []
             for tb in text_blocks:
                 if not final_text or final_text[-1] != tb:
                     final_text.append(tb)
             
             if final_text:
+                print(f"    Success! Extracted {len(final_text)} text blocks.")
                 return [{'text': tb} for tb in final_text]
         except Exception as e:
             print(f"    Failed instance {instance}: {e}")
