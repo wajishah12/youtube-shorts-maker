@@ -15,6 +15,7 @@ from sumy.summarizers.lsa import LsaSummarizer
 from sumy.summarizers.lsa import LsaSummarizer
 from PIL import Image
 import nltk
+from bs4 import BeautifulSoup
 import subprocess
 import glob
 import time
@@ -383,16 +384,46 @@ def get_transcript_stealth_playwright(video_id):
         print(f"    Stealth Playwright failed: {e}")
     return None
 
+def get_transcript_embed_player(video_id):
+    """Bypasses 'Sign in' by scraping the specialized embed player used for third-party websites."""
+    try:
+        print(f"  Attempting Direct Embed Player Scrape for {video_id}...")
+        url = f"https://www.youtube.com/embed/{video_id}"
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'})
+        with urllib.request.urlopen(req, timeout=10) as response:
+            html = response.read().decode('utf-8')
+            
+        # The captions are hidden in the ytInitialPlayerResponse JSON inside the embed HTML
+        match = re.search(r'ytInitialPlayerResponse\s*=\s*({.+?});', html)
+        if not match:
+            return None
+        
+        data = json.loads(match.group(1))
+        captions = data.get("captions", {}).get("playerCaptionsTracklistRenderer", {}).get("captionTracks", [])
+        if not captions:
+            return None
+            
+        en_track = next((c for c in captions if c.get("languageCode", "").startswith("en")), captions[0])
+        sub_url = en_track["baseUrl"]
+        
+        with urllib.request.urlopen(sub_url, timeout=10) as sub_res:
+            import xml.etree.ElementTree as ET
+            root = ET.fromstring(sub_res.read().decode('utf-8'))
+            return [{'text': child.text} for child in root if child.text]
+    except Exception as e:
+        print(f"    Embed player scrape failed: {e}")
+    return None
+
 def get_transcript(video_id):
     try:
-        # 0. ELITE BYPASS: Stealth Playwright (Simulates Human)
-        print("Using Stealth Playwright Bypass (Elite)...")
-        res = get_transcript_stealth_playwright(video_id)
+        # 0. DIRECT EMBED PLAYER (Best current bypass for Cloud)
+        print("Using Direct Embed Player Scrape (Primary)...")
+        res = get_transcript_embed_player(video_id)
         if res: return res
 
-        # 1. DEEP BYPASS: TV Client Method
-        print("Using TV Client Signature Bypass...")
-        res = get_transcript_tv_client(video_id)
+        # 1. ELITE BYPASS: Stealth Playwright
+        print("Using Stealth Playwright Bypass...")
+        res = get_transcript_stealth_playwright(video_id)
         if res: return res
 
         # 2. PROXY: Piped API
