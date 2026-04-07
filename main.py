@@ -58,11 +58,12 @@ def extract_video_id(url):
 def get_transcript_ytdlp(video_id):
     try:
         out_tmpl = os.path.join(OUTPUT_DIR, f"{video_id}.%(ext)s")
-        # Rotation strategy to beat "Sign in to confirm you're not a bot"
-        clients = ["android", "web", "ios", "tv"]
+        # Expanded rotation strategy with specialized clients
+        clients = ["android", "ios", "tv", "android_music", "web_embedded", "tv_embedded", "mweb", "android_vr"]
         urls = [
             f"https://www.youtube.com/watch?v={video_id}",
-            f"https://www.youtube.com/v/{video_id}"
+            f"https://www.youtube.com/v/{video_id}",
+            f"https://youtu.be/{video_id}"
         ]
         
         for client in clients:
@@ -189,9 +190,9 @@ def get_transcript_audio(video_id):
             'extractor_args': {'youtube': {'client': ['ios']}},
         }
         
-        print("Downloading audio for Whisper STT (rotating clients)...")
-        # Rotation strategy for audio download
-        clients = ["android", "web", "ios", "tv"]
+        print("Downloading audio for Whisper STT (rotating deep clients)...")
+        # Rotated specialized clients for audio
+        clients = ["android", "ios", "tv", "android_music", "web_embedded", "tv_embedded"]
         success = False
         
         for client in clients:
