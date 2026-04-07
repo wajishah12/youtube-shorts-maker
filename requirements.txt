@@ -11,5 +11,6 @@ duckduckgo-search
 yt-dlp
 curl_cffi
 playwright
+playwright-stealth
 openai-whisper
 youtube-search-python

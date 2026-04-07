@@ -342,16 +342,55 @@ def get_transcript_tv_client(video_id):
         print(f"    TV Client bypass failed: {e}")
     return None
 
+def get_transcript_stealth_playwright(video_id):
+    """Deep bypass using Playwright with stealth and simulated human interaction."""
+    try:
+        from playwright.sync_api import sync_playwright
+        from playwright_stealth import stealth_sync
+        import xml.etree.ElementTree as ET
+        
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            context = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            page = context.new_page()
+            stealth_sync(page) # HIDE ALL BOT FLAGS
+            
+            page.goto(f"https://www.youtube.com/watch?v={video_id}")
+            
+            # Simulate human behavior: slight scroll
+            page.mouse.wheel(0, 500)
+            time.sleep(3)
+            
+            player_response = page.evaluate("window.ytInitialPlayerResponse")
+            if not player_response:
+                return None
+                
+            captions = player_response.get('captions', {}).get('playerCaptionsTracklistRenderer', {}).get('captionTracks', [])
+            if not captions:
+                return None
+                
+            en_track = next((t for t in captions if t.get('languageCode', '').startswith('en')), captions[0])
+            url = en_track['baseUrl']
+            
+            xml_text = page.evaluate("(url) => fetch(url).then(r => r.text())", url)
+            browser.close()
+            
+            root = ET.fromstring(xml_text)
+            return [{'text': child.text} for child in root if child.text]
+    except Exception as e:
+        print(f"    Stealth Playwright failed: {e}")
+    return None
+
 def get_transcript(video_id):
     try:
-        # 0. DEEP BYPASS: TV Client Method (Most resistant to cloud IP blocks)
-        print("Using TV Client Signature Bypass (Deep)...")
-        res = get_transcript_tv_client(video_id)
+        # 0. ELITE BYPASS: Stealth Playwright (Simulates Human)
+        print("Using Stealth Playwright Bypass (Elite)...")
+        res = get_transcript_stealth_playwright(video_id)
         if res: return res
 
-        # 1. PRIMARY: search-python library (Uses YouTube Music API)
-        print("Using Internal Search API...")
-        res = get_transcript_search_python(video_id)
+        # 1. DEEP BYPASS: TV Client Method
+        print("Using TV Client Signature Bypass...")
+        res = get_transcript_tv_client(video_id)
         if res: return res
 
         # 2. PROXY: Piped API
