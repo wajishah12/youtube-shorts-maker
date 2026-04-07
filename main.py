@@ -58,18 +58,34 @@ def extract_video_id(url):
 def get_transcript_ytdlp(video_id):
     try:
         out_tmpl = os.path.join(OUTPUT_DIR, f"{video_id}.%(ext)s")
-        cmd = [
-            "python", "-m", "yt_dlp",
-            "--write-auto-sub",
-            "--write-sub",
-            "--skip-download",
-            "--sub-langs", "en.*",
-            "--sub-format", "vtt",
-            "--client-name", "ios",
-            "--output", out_tmpl,
-            f"https://www.youtube.com/watch?v={video_id}"
+        # Rotation strategy to beat "Sign in to confirm you're not a bot"
+        clients = ["android", "web", "ios", "tv"]
+        urls = [
+            f"https://www.youtube.com/watch?v={video_id}",
+            f"https://www.youtube.com/v/{video_id}"
         ]
-        subprocess.run(cmd, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        
+        for client in clients:
+            for url in urls:
+                cmd = [
+                    "python", "-m", "yt_dlp",
+                    "--write-auto-sub",
+                    "--write-sub",
+                    "--skip-download",
+                    "--sub-langs", "en.*",
+                    "--sub-format", "vtt",
+                    "--client-name", client,
+                    "--output", out_tmpl,
+                    url
+                ]
+                subprocess.run(cmd, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                
+                files = glob.glob(os.path.join(OUTPUT_DIR, f"{video_id}*.vtt"))
+                if files:
+                    print(f"  [ytdlp] Success with client: {client}")
+                    break
+            if glob.glob(os.path.join(OUTPUT_DIR, f"{video_id}*.vtt")):
+                break
         
         files = glob.glob(os.path.join(OUTPUT_DIR, f"{video_id}*.vtt"))
         if not files:
@@ -173,11 +189,35 @@ def get_transcript_audio(video_id):
             'extractor_args': {'youtube': {'client': ['ios']}},
         }
         
-        print("Downloading audio for Whisper STT...")
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([f"https://www.youtube.com/watch?v={video_id}"])
-            
-        print("Running Whisper tiny model...")
+        print("Downloading audio for Whisper STT (rotating clients)...")
+        # Rotation strategy for audio download
+        clients = ["android", "web", "ios", "tv"]
+        success = False
+        
+        for client in clients:
+            try:
+                ydl_opts = {
+                    'format': 'bestaudio/best',
+                    'outtmpl': audio_path,
+                    'postprocessors': [{
+                        'key': 'FFmpegExtractAudio',
+                        'preferredcodec': 'm4a',
+                    }],
+                    'quiet': True,
+                    'extractor_args': {'youtube': {'client': [client]}},
+                }
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    ydl.download([f"https://www.youtube.com/watch?v={video_id}"])
+                
+                if os.path.exists(audio_path):
+                    print(f"  [whisper] Audio success with client: {client}")
+                    success = True
+                    break
+            except Exception as e:
+                continue
+                
+        if not success:
+            return None
         model = whisper.load_model("tiny.en")
         result = model.transcribe(audio_path)
         
