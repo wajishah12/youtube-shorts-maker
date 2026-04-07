@@ -65,7 +65,7 @@ def get_transcript_ytdlp(video_id):
             "--skip-download",
             "--sub-langs", "en.*",
             "--sub-format", "vtt",
-            "--impersonate", "chrome",
+            "--client-name", "ios",
             "--output", out_tmpl,
             f"https://www.youtube.com/watch?v={video_id}"
         ]
@@ -170,6 +170,7 @@ def get_transcript_audio(video_id):
                 'preferredcodec': 'm4a',
             }],
             'quiet': True,
+            'extractor_args': {'youtube': {'client': ['ios']}},
         }
         
         print("Downloading audio for Whisper STT...")
