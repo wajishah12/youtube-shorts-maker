@@ -1,6 +1,6 @@
 youtube-transcript-api
 deep-translator
-gTTS
+edge-tts
 moviepy==1.0.3
 requests
 Pillow

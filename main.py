@@ -5,7 +5,8 @@ import urllib.request
 import feedparser
 from youtube_transcript_api import YouTubeTranscriptApi
 from deep_translator import GoogleTranslator
-from gtts import gTTS
+import edge_tts
+import asyncio
 from moviepy.editor import ImageClip, AudioFileClip, concatenate_videoclips
 from duckduckgo_search import DDGS
 from sumy.parsers.plaintext import PlaintextParser
@@ -301,32 +302,32 @@ def main():
     with open(os.path.join(OUTPUT_DIR, "summary.txt"), "w", encoding="utf-8") as f:
         f.write("--- English Summary ---\n" + summary_en + "\n\n--- Hindi Summary ---\n" + summary_hi)
         
-    print("Chunking and Translating transcript for Voiceover...")
-    # Using length around 350 to ensure translation limits aren't hit and visual changes happen periodically
-    chunks_en = chunk_transcript(transcript, limit=350)
+    print("Breaking summary into sentences for Voiceover...")
+    from nltk.tokenize import sent_tokenize
+    sentences_en = sent_tokenize(summary_en)
     
     clips = []
     full_hindi_transcript = ""
     
-    for i, chunk in enumerate(chunks_en):
-        if not chunk.strip():
+    for i, sentence in enumerate(sentences_en):
+        if not sentence.strip():
             continue
         try:
-            print(f"Processing chunk {i+1}/{len(chunks_en)}...")
+            print(f"Processing chunk {i+1}/{len(sentences_en)}...")
             
             # Translate text
-            chunk_hi = translator.translate(chunk)
-            if not chunk_hi:
+            sentence_hi = translator.translate(sentence)
+            if not sentence_hi:
                 continue
-            full_hindi_transcript += chunk_hi + " "
+            full_hindi_transcript += sentence_hi + " "
             
-            # Generate Audio
+            # Generate Audio using edge-tts
             audio_path = os.path.join(OUTPUT_DIR, f"audio_{i}.mp3")
-            tts = gTTS(text=chunk_hi, lang='hi', slow=False)
-            tts.save(audio_path)
+            communicate = edge_tts.Communicate(sentence_hi, "hi-IN-SwaraNeural")
+            asyncio.run(communicate.save(audio_path))
             
             # Keyword & Image
-            keyword = extract_keyword(chunk)
+            keyword = extract_keyword(sentence)
             print(f"  > Keyword: {keyword}")
             image_path = fetch_image_and_resize(keyword, i)
             
