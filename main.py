@@ -61,6 +61,7 @@ def get_transcript_ytdlp(video_id):
         cmd = [
             "python", "-m", "yt_dlp",
             "--write-auto-sub",
+            "--write-sub",
             "--skip-download",
             "--sub-langs", "en.*",
             "--sub-format", "vtt",
@@ -102,7 +103,7 @@ def get_transcript_playwright(video_id):
         import xml.etree.ElementTree as ET
         
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
+            browser = p.chromium.launch(headless=True, args=["--disable-blink-features=AutomationControlled"])
             context = browser.new_context(
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             )
@@ -115,7 +116,11 @@ def get_transcript_playwright(video_id):
             except:
                 pass
                 
-            page.wait_for_selector('video', timeout=15000)
+            # Hide automation features and wait for the precise variable rather than a visual element
+            try:
+                page.wait_for_function("typeof window.ytInitialPlayerResponse !== 'undefined'", timeout=15000)
+            except:
+                pass
             
             player_response = page.evaluate("window.ytInitialPlayerResponse")
             if not player_response:
@@ -147,6 +152,42 @@ def get_transcript_playwright(video_id):
             return results
     except Exception as e:
         print(f"Playwright fallback failed: {e}")
+        return None
+
+def get_transcript_audio(video_id):
+    try:
+        import whisper
+        import yt_dlp
+        import nltk
+        
+        audio_path = os.path.join(OUTPUT_DIR, f"{video_id}.m4a")
+        
+        ydl_opts = {
+            'format': 'bestaudio/best',
+            'outtmpl': audio_path,
+            'postprocessors': [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'm4a',
+            }],
+            'quiet': True,
+        }
+        
+        print("Downloading audio for Whisper STT...")
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([f"https://www.youtube.com/watch?v={video_id}"])
+            
+        print("Running Whisper tiny model...")
+        model = whisper.load_model("tiny.en")
+        result = model.transcribe(audio_path)
+        
+        text = result.get('text', '').strip()
+        if not text:
+            return None
+            
+        sentences = nltk.tokenize.sent_tokenize(text)
+        return [{'text': s} for s in sentences]
+    except Exception as e:
+        print(f"Whisper fallback failed: {e}")
         return None
 
 def get_transcript(video_id):
@@ -287,13 +328,18 @@ def main():
     print("Fetching transcript...")
     transcript = get_transcript(video_id)
     if not transcript:
-        print("Could not get transcript. Video might not have closed captions.")
+        print("Could not get transcript from YouTube. Falling back to downloading audio and using Whisper STT...")
+        transcript = get_transcript_audio(video_id)
+        
+    if not transcript:
+        print("Could not get transcript. Video might not have closed captions and STT failed.")
         return
         
     full_text = " ".join([t.text if hasattr(t, 'text') else t['text'] for t in transcript]).replace('\n', ' ')
     
     print("Summarizing...")
-    summary_en = summarize_text(full_text, sentences_count=4)
+    # Generate ~15 sentences to guarantee the video spans roughly 50s-1minute in length
+    summary_en = summarize_text(full_text, sentences_count=15)
     translator = GoogleTranslator(source='auto', target='hi')
     
     # Safely chunk for translation if summary is too long (though 4 sentences usually fine)
@@ -343,6 +389,9 @@ def main():
                 
             img_clip = img_clip.set_duration(audio_clip.duration)
             img_clip = img_clip.set_audio(audio_clip)
+            
+            # Animate the transition to make it feel like a dynamic short instead of a static slideshow
+            img_clip = img_clip.fadein(0.5).fadeout(0.5)
             clips.append(img_clip)
         except Exception as e:
             print(f"Error processing chunk {i}: {e}")
